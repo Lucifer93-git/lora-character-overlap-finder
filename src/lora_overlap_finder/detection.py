@@ -15,11 +15,16 @@ STOP_WORDS = {
     "lora", "locon", "lycoris", "dora", "character", "characters", "pack", "set",
     "model", "style", "version", "ver", "v1", "v2", "v3", "sdxl", "pony",
     "illustrious", "flux", "anime", "trained", "trigger", "woman", "man", "girl",
-    "boy", "solo", "1girl", "1boy", "masterpiece", "best", "quality",
+    "boy", "solo", "1girl", "1boy", "masterpiece", "best", "quality", "monochrome",
+    "greyscale", "grayscale", "simple", "background", "white", "black", "rating",
+    "safe", "general", "sensitive", "explicit", "source",
 }
 GENERIC_TRIGGERS = {
     "1girl", "1boy", "solo", "female", "male", "woman", "man", "masterpiece",
-    "best quality", "high quality", "looking at viewer",
+    "best quality", "high quality", "looking at viewer", "monochrome", "greyscale",
+    "grayscale", "white background", "simple background", "black background",
+    "smile", "closed mouth", "open mouth", "long hair", "short hair", "blush",
+    "standing", "sitting", "upper body", "full body", "portrait",
 }
 
 
