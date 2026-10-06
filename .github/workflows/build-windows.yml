@@ -39,6 +39,11 @@ jobs:
           pip install -e .
           pip install pyinstaller
 
+      - name: Compile all Python sources
+        shell: pwsh
+        run: |
+          python -m compileall -q src launcher.py smoke_test.py
+
       - name: Verify source imports
         shell: pwsh
         run: |
