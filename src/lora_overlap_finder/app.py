@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import sys
+import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -17,7 +19,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import __version__
 from .scanner import scan_folder
+from .updater import check_for_update, install_update
 
 DEFAULT_SCAN_FOLDERS = (
     Path(r"C:\StabilityMatrix\Data\Models\Lora"),
@@ -28,7 +32,7 @@ DEFAULT_SCAN_FOLDERS = (
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("LoRA Character Overlap Finder")
+        self.setWindowTitle(f"LoRA Character Overlap Finder v{__version__}")
         self.resize(1200, 720)
 
         self.status_label = QLabel("Ready. Scan the Stability Matrix folders or choose another folder.")
@@ -36,6 +40,8 @@ class MainWindow(QMainWindow):
         self.default_button.clicked.connect(self.scan_defaults)
         self.choose_button = QPushButton("Choose Folder")
         self.choose_button.clicked.connect(self.choose_folder)
+        self.update_button = QPushButton("Check for Updates")
+        self.update_button.clicked.connect(lambda: self.check_updates(show_current=True))
 
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["Source", "File", "Size", "SHA-256", "Errors"])
@@ -45,6 +51,7 @@ class MainWindow(QMainWindow):
         buttons = QHBoxLayout()
         buttons.addWidget(self.default_button)
         buttons.addWidget(self.choose_button)
+        buttons.addWidget(self.update_button)
         buttons.addStretch()
 
         layout = QVBoxLayout()
@@ -55,6 +62,48 @@ class MainWindow(QMainWindow):
         root = QWidget()
         root.setLayout(layout)
         self.setCentralWidget(root)
+
+        QTimer.singleShot(1200, lambda: self.check_updates(show_current=False))
+
+    def check_updates(self, show_current: bool) -> None:
+        self.update_button.setEnabled(False)
+        try:
+            update = check_for_update()
+        except Exception as exc:
+            if show_current:
+                QMessageBox.warning(self, "Update Check", f"Could not check for updates.\n\n{exc}")
+            return
+        finally:
+            self.update_button.setEnabled(True)
+
+        if update is None:
+            if show_current:
+                QMessageBox.information(self, "Update Check", f"Version {__version__} is up to date.")
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "Update Available",
+            f"Version {update.version} is available.\n\nDownload it, replace this EXE, and restart now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            install_update(update)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Update Failed",
+                f"The automatic update could not be installed.\n\n{exc}\n\nThe release page will be opened instead.",
+            )
+            if update.release_url:
+                webbrowser.open(update.release_url)
+            return
+
+        QApplication.quit()
 
     def _scan_folders(self, folders: list[Path]) -> None:
         existing = [folder for folder in folders if folder.is_dir()]
@@ -91,9 +140,7 @@ class MainWindow(QMainWindow):
 
         self.table.resizeColumnsToContents()
         self.table.setSortingEnabled(True)
-        self.status_label.setText(
-            f"Found {len(rows)} model files across {len(existing)} folder(s)."
-        )
+        self.status_label.setText(f"Found {len(rows)} model files across {len(existing)} folder(s).")
 
     def scan_defaults(self) -> None:
         self._scan_folders(list(DEFAULT_SCAN_FOLDERS))
