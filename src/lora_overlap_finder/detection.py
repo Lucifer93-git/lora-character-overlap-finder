@@ -82,19 +82,28 @@ def _walk_strings(value: Any):
 def _metadata_triggers(record: LoraRecord) -> list[str]:
     triggers: list[str] = []
     keys = ("trainedWords", "trained_words", "ss_tag_frequency", "trigger_words")
-    blobs = [record.metadata, record.sidecar_metadata]
-    for blob in blobs:
-        for key in keys:
-            raw = blob.get(key) if isinstance(blob, dict) else None
-            if isinstance(raw, list):
-                triggers.extend(str(x) for x in raw)
-            elif isinstance(raw, str):
-                try:
-                    decoded = json.loads(raw)
-                    if isinstance(decoded, list):
-                        triggers.extend(str(x) for x in decoded)
-                except json.JSONDecodeError:
-                    pass
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, raw in value.items():
+                if key in keys:
+                    if isinstance(raw, list):
+                        triggers.extend(str(x) for x in raw)
+                    elif isinstance(raw, str):
+                        try:
+                            decoded = json.loads(raw)
+                            if isinstance(decoded, list):
+                                triggers.extend(str(x) for x in decoded)
+                            else:
+                                triggers.append(raw)
+                        except json.JSONDecodeError:
+                            triggers.append(raw)
+                visit(raw)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(record.metadata)
+    visit(record.sidecar_metadata)
     return triggers
 
 
@@ -178,6 +187,10 @@ def enrich_from_civitai(
 def detect_overlaps(records: list[LoraRecord]) -> list[Overlap]:
     candidates: dict[int, list[Candidate]] = {}
     for index, record in enumerate(records):
+        if record.classification == "style":
+            candidates[index] = []
+            record.character_candidates = []
+            continue
         candidates[index] = candidates_from_record(record)
         record.character_candidates = [c.normalized for c in candidates[index] if c.score >= 70]
 
@@ -208,7 +221,7 @@ def detect_overlaps(records: list[LoraRecord]) -> list[Overlap]:
     # Same Civitai model is a strong relation even if its trigger words changed.
     model_groups: dict[int, list[LoraRecord]] = defaultdict(list)
     for record in records:
-        if record.civitai_model_id:
+        if record.classification != "style" and record.civitai_model_id:
             model_groups[record.civitai_model_id].append(record)
     for model_id, items in model_groups.items():
         if len(items) > 1:
