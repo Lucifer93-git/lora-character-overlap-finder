@@ -39,7 +39,13 @@ jobs:
       - name: Build executable
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name "LoRA-Character-Overlap-Finder" --paths src launcher.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name "LoRA-Character-Overlap-Finder" --paths "$PWD/src" --collect-submodules lora_overlap_finder launcher.py
+
+      - name: Verify packaged imports
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --console --name "LoRA-Character-Overlap-Finder-SmokeTest" --paths "$PWD/src" --collect-submodules lora_overlap_finder smoke_test.py
+          & ".\\dist\\LoRA-Character-Overlap-Finder-SmokeTest.exe"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
