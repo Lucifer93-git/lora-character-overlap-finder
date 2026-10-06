@@ -31,6 +31,27 @@ class Cache:
                 sha256 TEXT PRIMARY KEY, payload TEXT, checked INTEGER NOT NULL DEFAULT 1
             )"""
         )
+        self.db.execute(
+            """CREATE TABLE IF NOT EXISTS classifications (
+                path TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'character'
+            )"""
+        )
+        self.db.commit()
+
+    def get_classification(self, path: Path) -> str:
+        row = self.db.execute(
+            "SELECT kind FROM classifications WHERE path=?", (str(path),)
+        ).fetchone()
+        return row[0] if row and row[0] in {"character", "style"} else "character"
+
+    def set_classification(self, path: Path, kind: str) -> None:
+        if kind not in {"character", "style"}:
+            raise ValueError("Classification must be 'character' or 'style'")
+        self.db.execute(
+            """INSERT INTO classifications(path,kind) VALUES(?,?)
+               ON CONFLICT(path) DO UPDATE SET kind=excluded.kind""",
+            (str(path), kind),
+        )
         self.db.commit()
 
     def load_file(self, path: Path, size: int, mtime_ns: int) -> LoraRecord | None:
