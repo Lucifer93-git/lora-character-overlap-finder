@@ -12,7 +12,7 @@ import requests
 from . import __version__
 
 REPOSITORY = "Lucifer93-git/lora-character-overlap-finder"
-LATEST_RELEASE_API = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
+RELEASES_API = f"https://api.github.com/repos/{REPOSITORY}/releases"
 EXE_ASSET_NAME = "LoRA-Character-Overlap-Finder.exe"
 
 
@@ -35,25 +35,33 @@ def _version_tuple(value: str) -> tuple[int, ...]:
 
 def check_for_update(timeout: float = 5.0) -> UpdateInfo | None:
     response = requests.get(
-        LATEST_RELEASE_API,
+        RELEASES_API,
         headers={"Accept": "application/vnd.github+json", "User-Agent": f"lora-overlap-finder/{__version__}"},
+        params={"per_page": 20},
         timeout=timeout,
     )
     if response.status_code == 404:
         return None
     response.raise_for_status()
-    release = response.json()
-    latest = str(release.get("tag_name", "")).lstrip("v")
-    if not latest or _version_tuple(latest) <= _version_tuple(__version__):
-        return None
 
-    for asset in release.get("assets", []):
-        if asset.get("name") == EXE_ASSET_NAME:
-            return UpdateInfo(
-                version=latest,
-                download_url=asset["browser_download_url"],
-                release_url=release.get("html_url", ""),
-            )
+    candidates: list[tuple[tuple[int, ...], dict]] = []
+    for release in response.json():
+        if release.get("draft"):
+            continue
+        version = str(release.get("tag_name", "")).lstrip("v")
+        version_key = _version_tuple(version)
+        if version and version_key > _version_tuple(__version__):
+            candidates.append((version_key, release))
+
+    for _, release in sorted(candidates, key=lambda item: item[0], reverse=True):
+        version = str(release.get("tag_name", "")).lstrip("v")
+        for asset in release.get("assets", []):
+            if asset.get("name") == EXE_ASSET_NAME:
+                return UpdateInfo(
+                    version=version,
+                    download_url=asset["browser_download_url"],
+                    release_url=release.get("html_url", ""),
+                )
     return None
 
 
