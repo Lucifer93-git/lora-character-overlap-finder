@@ -8,6 +8,9 @@ on:
       - "src/**"
       - "requirements.txt"
       - "pyproject.toml"
+      - "launcher.py"
+      - "smoke_test.py"
+      - "build_windows.bat"
       - ".github/workflows/build-windows.yml"
   release:
     types: [published]
@@ -36,16 +39,31 @@ jobs:
           pip install -e .
           pip install pyinstaller
 
+      - name: Verify source imports
+        shell: pwsh
+        run: |
+          python -c "import lora_overlap_finder; import lora_overlap_finder.app; import lora_overlap_finder.cache; import lora_overlap_finder.detection; import lora_overlap_finder.scanner; import lora_overlap_finder.updater; print('Source imports OK', lora_overlap_finder.__version__)"
+
       - name: Build executable
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name "LoRA-Character-Overlap-Finder" --paths "$PWD/src" --collect-submodules lora_overlap_finder launcher.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name "LoRA-Character-Overlap-Finder" --paths "$PWD/src" --hidden-import lora_overlap_finder.app --hidden-import lora_overlap_finder.cache --hidden-import lora_overlap_finder.civitai --hidden-import lora_overlap_finder.detection --hidden-import lora_overlap_finder.models --hidden-import lora_overlap_finder.scanner --hidden-import lora_overlap_finder.updater launcher.py
 
       - name: Verify packaged imports
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --console --name "LoRA-Character-Overlap-Finder-SmokeTest" --paths "$PWD/src" --collect-submodules lora_overlap_finder smoke_test.py
-          & ".\\dist\\LoRA-Character-Overlap-Finder-SmokeTest.exe"
+          pyinstaller --noconfirm --clean --onefile --console --name "LoRA-Character-Overlap-Finder-SmokeTest" --paths "$PWD/src" --hidden-import lora_overlap_finder.app --hidden-import lora_overlap_finder.cache --hidden-import lora_overlap_finder.civitai --hidden-import lora_overlap_finder.detection --hidden-import lora_overlap_finder.models --hidden-import lora_overlap_finder.scanner --hidden-import lora_overlap_finder.updater smoke_test.py
+          & ".\dist\LoRA-Character-Overlap-Finder-SmokeTest.exe"
+
+      - name: Verify GUI executable starts
+        shell: pwsh
+        run: |
+          $p = Start-Process ".\dist\LoRA-Character-Overlap-Finder.exe" -PassThru
+          Start-Sleep -Seconds 5
+          if ($p.HasExited) {
+            throw "GUI EXE exited early with code $($p.ExitCode)"
+          }
+          Stop-Process -Id $p.Id -Force
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
