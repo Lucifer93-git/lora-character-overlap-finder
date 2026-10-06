@@ -16,3 +16,15 @@ def test_overlap_from_civitai_trained_words():
     overlaps = detect_overlaps([a, b])
     names = {item.character.casefold().replace("_", " ") for item in overlaps}
     assert "tifa lockhart" in names
+
+
+def test_generic_monochrome_is_not_overlap():
+    a = LoraRecord(Path("A.safetensors"), trained_words=["monochrome"])
+    b = LoraRecord(Path("B.safetensors"), trained_words=["monochrome"])
+    assert not detect_overlaps([a, b])
+
+
+def test_style_records_are_excluded():
+    a = LoraRecord(Path("Tifa_style.safetensors"), trained_words=["Tifa Lockhart"], classification="style")
+    b = LoraRecord(Path("Tifa.safetensors"), trained_words=["Tifa Lockhart"])
+    assert not detect_overlaps([a, b])
