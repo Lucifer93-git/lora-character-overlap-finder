@@ -10,6 +10,7 @@ from .cache import Cache
 from .models import LoraRecord
 
 SIDECAR_SUFFIXES = (".json", ".civitai.info")
+PREVIEW_SUFFIXES = (".preview.png", ".preview.jpg", ".preview.jpeg", ".png", ".jpg", ".jpeg", ".webp")
 
 
 def iter_lora_files(root: Path) -> Iterable[Path]:
@@ -58,6 +59,20 @@ def read_sidecar_metadata(path: Path) -> dict:
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
     return merged
+
+
+def find_preview(path: Path) -> Path | None:
+    stem = path.with_suffix("")
+    candidates = [Path(str(stem) + suffix) for suffix in PREVIEW_SUFFIXES]
+    candidates.extend([
+        path.with_suffix(".preview.png"),
+        path.with_suffix(".preview.jpg"),
+        path.with_suffix(".preview.jpeg"),
+    ])
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def scan_lora(path: Path, cache: Cache | None = None) -> LoraRecord:
