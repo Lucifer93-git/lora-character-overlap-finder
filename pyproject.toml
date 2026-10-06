@@ -5,8 +5,8 @@ description = "Windows GUI for detecting duplicate and overlapping character LoR
 requires-python = ">=3.11"
 dependencies = [
   "PySide6>=6.7",
-  "safetensors>=0.4.5",
-  "requests>=2.32",\n  "send2trash>=1.8.3",
+  "requests>=2.32",
+  "send2trash>=1.8.3",
 ]
 
 [project.scripts]
