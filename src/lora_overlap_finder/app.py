@@ -70,7 +70,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self._scan_thread: QThread | None = None
-        self._scan_worker: ScanWorker | None = None
+        self._scan_worker: ScanWorker | None = None\n        self._records = []\n        self._sources = {}\n        self._overlaps = []
         self.setWindowTitle(f"LoRA Character Overlap Finder v{__version__}")
         self.resize(1350, 780)
 
@@ -80,7 +80,7 @@ class MainWindow(QMainWindow):
         self.choose_button = QPushButton("Choose Folder")
         self.choose_button.clicked.connect(self.choose_folder)
         self.update_button = QPushButton("Check for Updates")
-        self.update_button.clicked.connect(lambda: self.check_updates(show_current=True))
+        self.update_button.clicked.connect(lambda: self.check_updates(show_current=True))\n        self.style_button = QPushButton("Mark Selected as Style")\n        self.style_button.clicked.connect(lambda: self.set_selected_classification("style"))\n        self.character_button = QPushButton("Mark Selected as Character")\n        self.character_button.clicked.connect(lambda: self.set_selected_classification("character"))\n        self.delete_button = QPushButton("Send Checked to Recycle Bin")\n        self.delete_button.clicked.connect(self.delete_checked)
 
         self.files_table = QTableWidget(0, 8)
         self.files_table.setHorizontalHeaderLabels([
@@ -209,17 +209,94 @@ class MainWindow(QMainWindow):
 
     def _show_overlaps(self, overlaps) -> None:
         self.overlap_table.setSortingEnabled(False)
-        self.overlap_table.setRowCount(len(overlaps))
-        for row, overlap in enumerate(overlaps):
-            paths = [str(record.path) for record in overlap.records]
+        rows = [(overlap, record) for overlap in overlaps for record in overlap.records]
+        self.overlap_table.setRowCount(len(rows))
+        for row, (overlap, record) in enumerate(rows):
+            check = QTableWidgetItem()
+            check.setFlags(check.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            check.setCheckState(Qt.CheckState.Unchecked)
+            check.setData(Qt.ItemDataRole.UserRole, str(record.path))
+            self.overlap_table.setItem(row, 0, check)
             values = [
-                overlap.character, overlap.confidence, str(len(paths)),
-                overlap.evidence, "\n".join(paths),
+                record.classification.title(), overlap.character, record.path.name,
+                overlap.confidence, overlap.evidence, str(record.path),
             ]
-            for column, value in enumerate(values):
-                self.overlap_table.setItem(row, column, QTableWidgetItem(value))
+            for column, value in enumerate(values, start=1):
+                item = QTableWidgetItem(value)
+                item.setData(Qt.ItemDataRole.UserRole, str(record.path))
+                self.overlap_table.setItem(row, column, item)
         self.overlap_table.resizeColumnsToContents()
         self.overlap_table.setSortingEnabled(True)
+
+    def _selected_paths(self) -> list[Path]:
+        paths: list[Path] = []
+        for item in self.overlap_table.selectedItems():
+            raw = item.data(Qt.ItemDataRole.UserRole)
+            if raw:
+                path = Path(raw)
+                if path not in paths:
+                    paths.append(path)
+        return paths
+
+    def set_selected_classification(self, kind: str) -> None:
+        paths = self._selected_paths()
+        if not paths:
+            QMessageBox.information(self, "Classification", "Select one or more LoRA rows first.")
+            return
+        cache = Cache()
+        try:
+            for path in paths:
+                cache.set_classification(path, kind)
+                for record in self._records:
+                    if record.path == path:
+                        record.classification = kind
+            self._overlaps = detect_overlaps(self._records)
+        finally:
+            cache.close()
+        self._show_overlaps(self._overlaps)
+        self.status_label.setText(
+            f"Marked {len(paths)} model(s) as {'Style / Not Character' if kind == 'style' else 'Character'}."
+        )
+
+    def delete_checked(self) -> None:
+        paths: list[Path] = []
+        for row in range(self.overlap_table.rowCount()):
+            item = self.overlap_table.item(row, 0)
+            if item and item.checkState() == Qt.CheckState.Checked:
+                raw = item.data(Qt.ItemDataRole.UserRole)
+                if raw and Path(raw) not in paths:
+                    paths.append(Path(raw))
+        if not paths:
+            QMessageBox.information(self, "Recycle Bin", "Check the LoRA files you want to remove first.")
+            return
+
+        preview = "\n".join(str(path) for path in paths[:15])
+        if len(paths) > 15:
+            preview += f"\n...and {len(paths) - 15} more"
+        answer = QMessageBox.warning(
+            self, "Confirm Recycle Bin",
+            f"Send these {len(paths)} LoRA file(s) to the Windows Recycle Bin?\n\n{preview}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        failed = []
+        for path in paths:
+            try:
+                if path.exists():
+                    send2trash(str(path))
+            except Exception as exc:
+                failed.append(f"{path}: {exc}")
+        if failed:
+            QMessageBox.warning(self, "Recycle Bin", "Some files could not be removed:\n\n" + "\n".join(failed[:10]))
+        else:
+            QMessageBox.information(self, "Recycle Bin", f"Sent {len(paths)} file(s) to Recycle Bin.")
+        self._records = [r for r in self._records if r.path not in paths]
+        self._overlaps = detect_overlaps(self._records)
+        self._show_files(self._records, self._sources)
+        self._show_overlaps(self._overlaps)
 
     def scan_defaults(self) -> None:
         self._scan_folders(list(DEFAULT_SCAN_FOLDERS))
