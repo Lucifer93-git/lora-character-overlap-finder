@@ -19,3 +19,4 @@ class LoraRecord:
     character_candidates: list[str] = field(default_factory=list)
     scan_errors: list[str] = field(default_factory=list)
     from_cache: bool = False
+    classification: str = "character"
