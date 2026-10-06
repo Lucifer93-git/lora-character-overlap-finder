@@ -9,12 +9,14 @@ on:
       - "requirements.txt"
       - "pyproject.toml"
       - ".github/workflows/build-windows.yml"
+  release:
+    types: [published]
 
 jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout
@@ -39,10 +41,16 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed --name "LoRA-Character-Overlap-Finder" --paths src src/lora_overlap_finder/app.py
 
-      - name: Upload executable
+      - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: lora-character-overlap-finder-windows
           path: dist/LoRA-Character-Overlap-Finder.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Attach EXE to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/LoRA-Character-Overlap-Finder.exe
