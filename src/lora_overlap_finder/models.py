@@ -20,3 +20,4 @@ class LoraRecord:
     scan_errors: list[str] = field(default_factory=list)
     from_cache: bool = False
     classification: str = "character"
+    preview_path: Path | None = None
