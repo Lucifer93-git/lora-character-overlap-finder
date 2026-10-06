@@ -37,12 +37,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
-          pip install pyinstaller
+          pip install pyinstaller pytest
 
       - name: Compile all Python sources
         shell: pwsh
         run: |
           python -m compileall -q src launcher.py smoke_test.py
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          pytest -q
 
       - name: Verify source imports
         shell: pwsh
