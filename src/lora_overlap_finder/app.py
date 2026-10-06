@@ -4,18 +4,20 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal, Slot
+from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal, Slot, QSize
 from send2trash import send2trash
+from PySide6.QtGui import QPixmap
 
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
     QPushButton, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QTreeWidget, QTreeWidgetItem,
 )
 
 from . import __version__
 from .cache import Cache
 from .detection import detect_overlaps, enrich_from_civitai
-from .scanner import scan_folder
+from .scanner import find_preview, scan_folder
 from .updater import check_for_update, install_update
 
 DEFAULT_SCAN_FOLDERS = (
@@ -101,12 +103,14 @@ class MainWindow(QMainWindow):
         self.files_table.setAlternatingRowColors(True)
         self.files_table.setSortingEnabled(True)
 
-        self.overlap_table = QTableWidget(0, 7)
-        self.overlap_table.setHorizontalHeaderLabels(
-            ["Delete", "Type", "Character / Match", "LoRA", "Confidence", "Evidence", "Path"]
+        self.overlap_table = QTreeWidget()
+        self.overlap_table.setColumnCount(7)
+        self.overlap_table.setHeaderLabels(
+            ["Delete", "Preview", "Character / Match", "LoRA", "Confidence", "Evidence", "Path"]
         )
         self.overlap_table.setAlternatingRowColors(True)
-        self.overlap_table.setSortingEnabled(True)
+        self.overlap_table.setIconSize(QSize(96, 96))
+        self.overlap_table.setUniformRowHeights(False)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self.overlap_table, "Overlaps")
@@ -227,31 +231,50 @@ class MainWindow(QMainWindow):
         self.files_table.setSortingEnabled(True)
 
     def _show_overlaps(self, overlaps) -> None:
-        self.overlap_table.setSortingEnabled(False)
-        rows = [(overlap, record) for overlap in overlaps for record in overlap.records]
-        self.overlap_table.setRowCount(len(rows))
-        for row, (overlap, record) in enumerate(rows):
-            check = QTableWidgetItem()
-            check.setFlags(check.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            check.setCheckState(Qt.CheckState.Unchecked)
-            check.setData(Qt.ItemDataRole.UserRole, str(record.path))
-            self.overlap_table.setItem(row, 0, check)
-            values = [
-                record.classification.title(), overlap.character, record.path.name,
-                overlap.confidence, overlap.evidence, str(record.path),
-            ]
-            for column, value in enumerate(values, start=1):
-                item = QTableWidgetItem(value)
-                item.setData(Qt.ItemDataRole.UserRole, str(record.path))
-                self.overlap_table.setItem(row, column, item)
-        self.overlap_table.resizeColumnsToContents()
-        self.overlap_table.setSortingEnabled(True)
+        self.overlap_table.clear()
+        for overlap in overlaps:
+            group = QTreeWidgetItem(self.overlap_table)
+            group.setText(2, f"{overlap.character} · {len(overlap.records)} matches")
+            group.setText(4, overlap.confidence)
+            group.setText(5, overlap.evidence)
+            group.setFirstColumnSpanned(True)
+            group.setExpanded(True)
+            font = group.font(2)
+            font.setBold(True)
+            group.setFont(2, font)
+
+            for record in overlap.records:
+                child = QTreeWidgetItem(group)
+                child.setFlags(child.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                child.setCheckState(0, Qt.CheckState.Unchecked)
+                raw = str(record.path)
+                child.setData(0, Qt.ItemDataRole.UserRole, raw)
+                child.setText(2, overlap.character)
+                child.setText(3, record.path.name)
+                child.setText(4, overlap.confidence)
+                child.setText(5, overlap.evidence)
+                child.setText(6, raw)
+                preview = find_preview(record.path)
+                record.preview_path = preview
+                if preview:
+                    pixmap = QPixmap(str(preview))
+                    if not pixmap.isNull():
+                        child.setIcon(1, pixmap.scaled(
+                            96, 96, Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        ))
+                child.setSizeHint(1, QSize(104, 104))
+                for column in range(1, 7):
+                    child.setData(column, Qt.ItemDataRole.UserRole, raw)
+
+        for column in range(7):
+            self.overlap_table.resizeColumnToContents(column)
 
     def _selected_paths(self) -> list[Path]:
         paths: list[Path] = []
         table = self.overlap_table if self.tabs.currentWidget() is self.overlap_table else self.files_table
         for item in table.selectedItems():
-            raw = item.data(Qt.ItemDataRole.UserRole)
+            raw = item.data(0, Qt.ItemDataRole.UserRole) if isinstance(table, QTreeWidget) else item.data(Qt.ItemDataRole.UserRole)
             if raw:
                 path = Path(raw)
                 if path not in paths:
@@ -281,12 +304,15 @@ class MainWindow(QMainWindow):
 
     def delete_checked(self) -> None:
         paths: list[Path] = []
-        for row in range(self.overlap_table.rowCount()):
-            item = self.overlap_table.item(row, 0)
-            if item and item.checkState() == Qt.CheckState.Checked:
-                raw = item.data(Qt.ItemDataRole.UserRole)
-                if raw and Path(raw) not in paths:
-                    paths.append(Path(raw))
+        root = self.overlap_table.invisibleRootItem()
+        for group_index in range(root.childCount()):
+            group = root.child(group_index)
+            for child_index in range(group.childCount()):
+                item = group.child(child_index)
+                if item.checkState(0) == Qt.CheckState.Checked:
+                    raw = item.data(0, Qt.ItemDataRole.UserRole)
+                    if raw and Path(raw) not in paths:
+                        paths.append(Path(raw))
         if not paths:
             QMessageBox.information(self, "Recycle Bin", "Check the LoRA files you want to remove first.")
             return
