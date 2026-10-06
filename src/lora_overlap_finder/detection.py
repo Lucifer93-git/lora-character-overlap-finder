@@ -120,13 +120,43 @@ def candidates_from_record(record: LoraRecord) -> list[Candidate]:
     return sorted(found.values(), key=lambda c: (-c.score, c.normalized))
 
 
-def enrich_from_civitai(records: list[LoraRecord], client: CivitaiClient | None = None) -> None:
+def _apply_civitai(record: LoraRecord, version: dict) -> None:
+    record.civitai_model_version_id = version.get("id")
+    record.civitai_model_id = version.get("modelId")
+    record.base_model = version.get("baseModel")
+    record.trained_words = [str(x) for x in version.get("trainedWords", []) if x]
+    model = version.get("model") or {}
+    if model.get("name"):
+        record.metadata["_civitai_model_name"] = str(model["name"])
+    tags = model.get("tags")
+    if isinstance(tags, list):
+        record.metadata["_civitai_tags"] = tags
+
+
+def enrich_from_civitai(
+    records: list[LoraRecord],
+    client: CivitaiClient | None = None,
+    cache=None,
+) -> tuple[int, int]:
     client = client or CivitaiClient()
     hashed = [record for record in records if record.sha256]
-    if not hashed:
-        return
+    missing: list[LoraRecord] = []
+    cache_hits = 0
 
-    versions = client.get_model_versions_by_hashes([r.sha256 for r in hashed if r.sha256])
+    for record in hashed:
+        if cache:
+            found, payload = cache.get_civitai(record.sha256 or "")
+            if found:
+                cache_hits += 1
+                if payload:
+                    _apply_civitai(record, payload)
+                continue
+        missing.append(record)
+
+    if not missing:
+        return cache_hits, 0
+
+    versions = client.get_model_versions_by_hashes([r.sha256 for r in missing if r.sha256])
     by_hash: dict[str, dict] = {}
     for version in versions:
         for file in version.get("files", []):
@@ -134,32 +164,15 @@ def enrich_from_civitai(records: list[LoraRecord], client: CivitaiClient | None 
             if sha:
                 by_hash[sha] = version
 
-    model_cache: dict[int, dict] = {}
-    for record in hashed:
-        version = by_hash.get((record.sha256 or "").upper())
-        if not version:
-            continue
-        record.civitai_model_version_id = version.get("id")
-        record.civitai_model_id = version.get("modelId")
-        record.base_model = version.get("baseModel")
-        record.trained_words = [str(x) for x in version.get("trainedWords", []) if x]
-        model = version.get("model") or {}
-        if model.get("name"):
-            record.metadata["_civitai_model_name"] = str(model["name"])
+    for record in missing:
+        sha = (record.sha256 or "").upper()
+        version = by_hash.get(sha)
+        if cache:
+            cache.save_civitai(sha, version)
+        if version:
+            _apply_civitai(record, version)
 
-        mid = record.civitai_model_id
-        if mid:
-            if mid not in model_cache:
-                try:
-                    model_cache[mid] = client.get_model(mid) or {}
-                except Exception:
-                    model_cache[mid] = {}
-            full = model_cache[mid]
-            if full.get("name"):
-                record.metadata["_civitai_model_name"] = str(full["name"])
-            tags = full.get("tags")
-            if isinstance(tags, list):
-                record.metadata["_civitai_tags"] = tags
+    return cache_hits, len(missing)
 
 
 def detect_overlaps(records: list[LoraRecord]) -> list[Overlap]:
