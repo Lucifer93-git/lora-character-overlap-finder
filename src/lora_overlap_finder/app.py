@@ -5,6 +5,8 @@ import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal, Slot
+from send2trash import send2trash
+
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
     QPushButton, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
@@ -70,7 +72,10 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self._scan_thread: QThread | None = None
-        self._scan_worker: ScanWorker | None = None\n        self._records = []\n        self._sources = {}\n        self._overlaps = []
+        self._scan_worker: ScanWorker | None = None
+        self._records = []
+        self._sources = {}
+        self._overlaps = []
         self.setWindowTitle(f"LoRA Character Overlap Finder v{__version__}")
         self.resize(1350, 780)
 
@@ -80,7 +85,13 @@ class MainWindow(QMainWindow):
         self.choose_button = QPushButton("Choose Folder")
         self.choose_button.clicked.connect(self.choose_folder)
         self.update_button = QPushButton("Check for Updates")
-        self.update_button.clicked.connect(lambda: self.check_updates(show_current=True))\n        self.style_button = QPushButton("Mark Selected as Style")\n        self.style_button.clicked.connect(lambda: self.set_selected_classification("style"))\n        self.character_button = QPushButton("Mark Selected as Character")\n        self.character_button.clicked.connect(lambda: self.set_selected_classification("character"))\n        self.delete_button = QPushButton("Send Checked to Recycle Bin")\n        self.delete_button.clicked.connect(self.delete_checked)
+        self.update_button.clicked.connect(lambda: self.check_updates(show_current=True))
+        self.style_button = QPushButton("Mark Selected as Style")
+        self.style_button.clicked.connect(lambda: self.set_selected_classification("style"))
+        self.character_button = QPushButton("Mark Selected as Character")
+        self.character_button.clicked.connect(lambda: self.set_selected_classification("character"))
+        self.delete_button = QPushButton("Send Checked to Recycle Bin")
+        self.delete_button.clicked.connect(self.delete_checked)
 
         self.files_table = QTableWidget(0, 8)
         self.files_table.setHorizontalHeaderLabels([
@@ -122,7 +133,9 @@ class MainWindow(QMainWindow):
             update = check_for_update()
         except Exception as exc:
             if show_current:
-                QMessageBox.warning(self, "Update Check", f"Could not check for updates.\n\n{exc}")
+                QMessageBox.warning(self, "Update Check", f"Could not check for updates.
+
+{exc}")
             return
         finally:
             self.update_button.setEnabled(True)
@@ -132,7 +145,9 @@ class MainWindow(QMainWindow):
             return
         answer = QMessageBox.question(
             self, "Update Available",
-            f"Version {update.version} is available.\n\nDownload it, replace this EXE, and restart now?",
+            f"Version {update.version} is available.
+
+Download it, replace this EXE, and restart now?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
@@ -141,7 +156,9 @@ class MainWindow(QMainWindow):
         try:
             install_update(update)
         except Exception as exc:
-            QMessageBox.critical(self, "Update Failed", f"Automatic update failed.\n\n{exc}")
+            QMessageBox.critical(self, "Update Failed", f"Automatic update failed.
+
+{exc}")
             if update.release_url:
                 webbrowser.open(update.release_url)
             return
@@ -270,12 +287,16 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Recycle Bin", "Check the LoRA files you want to remove first.")
             return
 
-        preview = "\n".join(str(path) for path in paths[:15])
+        preview = "
+".join(str(path) for path in paths[:15])
         if len(paths) > 15:
-            preview += f"\n...and {len(paths) - 15} more"
+            preview += f"
+...and {len(paths) - 15} more"
         answer = QMessageBox.warning(
             self, "Confirm Recycle Bin",
-            f"Send these {len(paths)} LoRA file(s) to the Windows Recycle Bin?\n\n{preview}",
+            f"Send these {len(paths)} LoRA file(s) to the Windows Recycle Bin?
+
+{preview}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -290,7 +311,10 @@ class MainWindow(QMainWindow):
             except Exception as exc:
                 failed.append(f"{path}: {exc}")
         if failed:
-            QMessageBox.warning(self, "Recycle Bin", "Some files could not be removed:\n\n" + "\n".join(failed[:10]))
+            QMessageBox.warning(self, "Recycle Bin", "Some files could not be removed:
+
+" + "
+".join(failed[:10]))
         else:
             QMessageBox.information(self, "Recycle Bin", f"Sent {len(paths)} file(s) to Recycle Bin.")
         self._records = [r for r in self._records if r.path not in paths]
