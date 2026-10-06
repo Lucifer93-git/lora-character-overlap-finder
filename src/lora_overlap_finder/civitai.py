@@ -35,17 +35,12 @@ class CivitaiClient:
     def get_model_versions_by_hashes(self, hashes: list[str]) -> list[dict]:
         results: list[dict] = []
         unique = list(dict.fromkeys(h.upper() for h in hashes if len(h) == 64))
-        for start in range(0, len(unique), 100):
-            response = requests.post(
-                f"{self.base_url}/model-versions/by-hash",
-                json=unique[start : start + 100],
-                headers=self._headers(),
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            if isinstance(payload, list):
-                results.extend(item for item in payload if isinstance(item, dict))
+        # Use the documented single-hash endpoint for reliability. The cache means
+        # each hash is normally requested only once across scans.
+        for sha256 in unique:
+            payload = self.get_model_version_by_hash(sha256)
+            if payload:
+                results.append(payload)
         return results
 
     def get_model(self, model_id: int) -> dict | None:
