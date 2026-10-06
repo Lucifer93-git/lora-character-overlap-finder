@@ -1,0 +1,20 @@
+[project]
+name = "lora-character-overlap-finder"
+version = "0.1.0"
+description = "Windows GUI for detecting duplicate and overlapping character LoRAs."
+requires-python = ">=3.11"
+dependencies = [
+  "PySide6>=6.7",
+  "safetensors>=0.4.5",
+  "requests>=2.32",
+]
+
+[project.scripts]
+lora-overlap-finder = "lora_overlap_finder.app:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
