@@ -93,35 +93,38 @@ class MainWindow(QMainWindow):
         self.delete_button = QPushButton("Send Checked to Recycle Bin")
         self.delete_button.clicked.connect(self.delete_checked)
 
-        self.files_table = QTableWidget(0, 8)
+        self.files_table = QTableWidget(0, 9)
         self.files_table.setHorizontalHeaderLabels([
-            "Source", "File", "Size", "Civitai Model", "Version", "Base Model",
+            "Type", "Source", "File", "Size", "Civitai Model", "Version", "Base Model",
             "Trained Words", "Errors",
         ])
         self.files_table.setAlternatingRowColors(True)
         self.files_table.setSortingEnabled(True)
 
-        self.overlap_table = QTableWidget(0, 5)
+        self.overlap_table = QTableWidget(0, 7)
         self.overlap_table.setHorizontalHeaderLabels(
-            ["Character / Match", "Confidence", "Files", "Evidence", "Matching Paths"]
+            ["Delete", "Type", "Character / Match", "LoRA", "Confidence", "Evidence", "Path"]
         )
         self.overlap_table.setAlternatingRowColors(True)
         self.overlap_table.setSortingEnabled(True)
 
-        tabs = QTabWidget()
-        tabs.addTab(self.overlap_table, "Overlaps")
-        tabs.addTab(self.files_table, "All Models")
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self.overlap_table, "Overlaps")
+        self.tabs.addTab(self.files_table, "All Models")
 
         buttons = QHBoxLayout()
         buttons.addWidget(self.default_button)
         buttons.addWidget(self.choose_button)
         buttons.addWidget(self.update_button)
+        buttons.addWidget(self.style_button)
+        buttons.addWidget(self.character_button)
+        buttons.addWidget(self.delete_button)
         buttons.addStretch()
 
         layout = QVBoxLayout()
         layout.addLayout(buttons)
         layout.addWidget(self.status_label)
-        layout.addWidget(tabs)
+        layout.addWidget(self.tabs)
         root = QWidget()
         root.setLayout(layout)
         self.setCentralWidget(root)
@@ -133,7 +136,7 @@ class MainWindow(QMainWindow):
             update = check_for_update()
         except Exception as exc:
             if show_current:
-                QMessageBox.warning(self, "Update Check", f"Could not check for updates.\\n\\n{exc}")
+                QMessageBox.warning(self, "Update Check", f"Could not check for updates.\n\n{exc}")
             return
         finally:
             self.update_button.setEnabled(True)
@@ -143,7 +146,7 @@ class MainWindow(QMainWindow):
             return
         answer = QMessageBox.question(
             self, "Update Available",
-            f"Version {update.version} is available.\\n\\nDownload it, replace this EXE, and restart now?",
+            f"Version {update.version} is available.\n\nDownload it, replace this EXE, and restart now?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
@@ -152,7 +155,7 @@ class MainWindow(QMainWindow):
         try:
             install_update(update)
         except Exception as exc:
-            QMessageBox.critical(self, "Update Failed", f"Automatic update failed.\\n\\n{exc}")
+            QMessageBox.critical(self, "Update Failed", f"Automatic update failed.\n\n{exc}")
             if update.release_url:
                 webbrowser.open(update.release_url)
             return
@@ -188,6 +191,9 @@ class MainWindow(QMainWindow):
 
     @Slot(object, object, object, str)
     def _scan_complete(self, records, sources, overlaps, summary: str) -> None:
+        self._records = records
+        self._sources = sources
+        self._overlaps = overlaps
         self._show_files(records, sources)
         self._show_overlaps(overlaps)
         self.status_label.setText(summary)
@@ -208,13 +214,15 @@ class MainWindow(QMainWindow):
         self.files_table.setRowCount(len(records))
         for row, record in enumerate(records):
             values = [
-                sources.get(record.path, ""), str(record.path), str(record.file_size),
-                str(record.civitai_model_id or ""), str(record.civitai_model_version_id or ""),
-                record.base_model or "", ", ".join(record.trained_words),
-                "; ".join(record.scan_errors),
+                record.classification.title(), sources.get(record.path, ""), str(record.path),
+                str(record.file_size), str(record.civitai_model_id or ""),
+                str(record.civitai_model_version_id or ""), record.base_model or "",
+                ", ".join(record.trained_words), "; ".join(record.scan_errors),
             ]
             for column, value in enumerate(values):
-                self.files_table.setItem(row, column, QTableWidgetItem(value))
+                item = QTableWidgetItem(value)
+                item.setData(Qt.ItemDataRole.UserRole, str(record.path))
+                self.files_table.setItem(row, column, item)
         self.files_table.resizeColumnsToContents()
         self.files_table.setSortingEnabled(True)
 
@@ -241,7 +249,8 @@ class MainWindow(QMainWindow):
 
     def _selected_paths(self) -> list[Path]:
         paths: list[Path] = []
-        for item in self.overlap_table.selectedItems():
+        table = self.overlap_table if self.tabs.currentWidget() is self.overlap_table else self.files_table
+        for item in table.selectedItems():
             raw = item.data(Qt.ItemDataRole.UserRole)
             if raw:
                 path = Path(raw)
@@ -264,6 +273,7 @@ class MainWindow(QMainWindow):
             self._overlaps = detect_overlaps(self._records)
         finally:
             cache.close()
+        self._show_files(self._records, self._sources)
         self._show_overlaps(self._overlaps)
         self.status_label.setText(
             f"Marked {len(paths)} model(s) as {'Style / Not Character' if kind == 'style' else 'Character'}."
@@ -281,12 +291,12 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Recycle Bin", "Check the LoRA files you want to remove first.")
             return
 
-        preview = "\\n".join(str(path) for path in paths[:15])
+        preview = "\n".join(str(path) for path in paths[:15])
         if len(paths) > 15:
-            preview += f"\\n...and {len(paths) - 15} more"
+            preview += f"\n...and {len(paths) - 15} more"
         answer = QMessageBox.warning(
             self, "Confirm Recycle Bin",
-            f"Send these {len(paths)} LoRA file(s) to the Windows Recycle Bin?\\n\\n{preview}",
+            f"Send these {len(paths)} LoRA file(s) to the Windows Recycle Bin?\n\n{preview}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -301,7 +311,7 @@ class MainWindow(QMainWindow):
             except Exception as exc:
                 failed.append(f"{path}: {exc}")
         if failed:
-            QMessageBox.warning(self, "Recycle Bin", "Some files could not be removed:\\n\\n" + "\\n".join(failed[:10]))
+            QMessageBox.warning(self, "Recycle Bin", "Some files could not be removed:\n\n" + "\n".join(failed[:10]))
         else:
             QMessageBox.information(self, "Recycle Bin", f"Sent {len(paths)} file(s) to Recycle Bin.")
         self._records = [r for r in self._records if r.path not in paths]
