@@ -39,7 +39,7 @@ jobs:
       - name: Build executable
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name "LoRA-Character-Overlap-Finder" --paths src src/lora_overlap_finder/app.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name "LoRA-Character-Overlap-Finder" --paths src launcher.py
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
