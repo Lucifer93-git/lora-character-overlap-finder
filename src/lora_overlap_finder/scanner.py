@@ -65,9 +65,12 @@ def scan_lora(path: Path, cache: Cache | None = None) -> LoraRecord:
     if cache:
         cached = cache.load_file(path, stat.st_size, stat.st_mtime_ns)
         if cached is not None:
-            cached.classification = cache.get_classification(path)\n            return cached
+            cached.classification = cache.get_classification(path)
+            return cached
 
-    record = LoraRecord(path=path, file_size=stat.st_size)\n    if cache:\n        record.classification = cache.get_classification(path)
+    record = LoraRecord(path=path, file_size=stat.st_size)
+    if cache:
+        record.classification = cache.get_classification(path)
     try:
         record.sha256 = sha256_file(path)
     except OSError as exc:
