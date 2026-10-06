@@ -133,9 +133,7 @@ class MainWindow(QMainWindow):
             update = check_for_update()
         except Exception as exc:
             if show_current:
-                QMessageBox.warning(self, "Update Check", f"Could not check for updates.
-
-{exc}")
+                QMessageBox.warning(self, "Update Check", f"Could not check for updates.\\n\\n{exc}")
             return
         finally:
             self.update_button.setEnabled(True)
@@ -145,9 +143,7 @@ class MainWindow(QMainWindow):
             return
         answer = QMessageBox.question(
             self, "Update Available",
-            f"Version {update.version} is available.
-
-Download it, replace this EXE, and restart now?",
+            f"Version {update.version} is available.\\n\\nDownload it, replace this EXE, and restart now?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
@@ -156,9 +152,7 @@ Download it, replace this EXE, and restart now?",
         try:
             install_update(update)
         except Exception as exc:
-            QMessageBox.critical(self, "Update Failed", f"Automatic update failed.
-
-{exc}")
+            QMessageBox.critical(self, "Update Failed", f"Automatic update failed.\\n\\n{exc}")
             if update.release_url:
                 webbrowser.open(update.release_url)
             return
@@ -287,16 +281,12 @@ Download it, replace this EXE, and restart now?",
             QMessageBox.information(self, "Recycle Bin", "Check the LoRA files you want to remove first.")
             return
 
-        preview = "
-".join(str(path) for path in paths[:15])
+        preview = "\\n".join(str(path) for path in paths[:15])
         if len(paths) > 15:
-            preview += f"
-...and {len(paths) - 15} more"
+            preview += f"\\n...and {len(paths) - 15} more"
         answer = QMessageBox.warning(
             self, "Confirm Recycle Bin",
-            f"Send these {len(paths)} LoRA file(s) to the Windows Recycle Bin?
-
-{preview}",
+            f"Send these {len(paths)} LoRA file(s) to the Windows Recycle Bin?\\n\\n{preview}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -311,10 +301,7 @@ Download it, replace this EXE, and restart now?",
             except Exception as exc:
                 failed.append(f"{path}: {exc}")
         if failed:
-            QMessageBox.warning(self, "Recycle Bin", "Some files could not be removed:
-
-" + "
-".join(failed[:10]))
+            QMessageBox.warning(self, "Recycle Bin", "Some files could not be removed:\\n\\n" + "\\n".join(failed[:10]))
         else:
             QMessageBox.information(self, "Recycle Bin", f"Sent {len(paths)} file(s) to Recycle Bin.")
         self._records = [r for r in self._records if r.path not in paths]
