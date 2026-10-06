@@ -4,13 +4,14 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
     QPushButton, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import __version__
+from .cache import Cache
 from .detection import detect_overlaps, enrich_from_civitai
 from .scanner import scan_folder
 from .updater import check_for_update, install_update
@@ -21,9 +22,55 @@ DEFAULT_SCAN_FOLDERS = (
 )
 
 
+class ScanWorker(QObject):
+    status = Signal(str)
+    finished = Signal(object, object, object, str)
+    failed = Signal(str)
+
+    def __init__(self, folders: list[Path]) -> None:
+        super().__init__()
+        self.folders = folders
+
+    @Slot()
+    def run(self) -> None:
+        cache = Cache()
+        try:
+            records = []
+            sources: dict[Path, str] = {}
+            self.status.emit("Scanning local models (unchanged files use the cache)...")
+            for folder in self.folders:
+                for record in scan_folder(folder, cache=cache):
+                    records.append(record)
+                    sources[record.path] = folder.name
+
+            local_hits = sum(1 for record in records if record.from_cache)
+            self.status.emit(f"Found {len(records)} files. Checking new hashes against Civitai...")
+            try:
+                civitai_hits, queried = enrich_from_civitai(records, cache=cache)
+                warning = ""
+            except Exception as exc:
+                civitai_hits, queried = 0, 0
+                warning = f" Civitai lookup warning: {exc}"
+
+            self.status.emit("Analyzing character overlap...")
+            overlaps = detect_overlaps(records)
+            summary = (
+                f"Done: {len(records)} files, {len(overlaps)} overlap group(s). "
+                f"Local cache: {local_hits}/{len(records)}; Civitai cache: {civitai_hits}; "
+                f"new Civitai lookups: {queried}.{warning}"
+            )
+            self.finished.emit(records, sources, overlaps, summary)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+        finally:
+            cache.close()
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+        self._scan_thread: QThread | None = None
+        self._scan_worker: ScanWorker | None = None
         self.setWindowTitle(f"LoRA Character Overlap Finder v{__version__}")
         self.resize(1350, 780)
 
@@ -44,9 +91,9 @@ class MainWindow(QMainWindow):
         self.files_table.setSortingEnabled(True)
 
         self.overlap_table = QTableWidget(0, 5)
-        self.overlap_table.setHorizontalHeaderLabels([
-            "Character / Match", "Confidence", "Files", "Evidence", "Matching Paths"
-        ])
+        self.overlap_table.setHorizontalHeaderLabels(
+            ["Character / Match", "Confidence", "Files", "Evidence", "Matching Paths"]
+        )
         self.overlap_table.setAlternatingRowColors(True)
         self.overlap_table.setSortingEnabled(True)
 
@@ -64,7 +111,6 @@ class MainWindow(QMainWindow):
         layout.addLayout(buttons)
         layout.addWidget(self.status_label)
         layout.addWidget(tabs)
-
         root = QWidget()
         root.setLayout(layout)
         self.setCentralWidget(root)
@@ -101,58 +147,59 @@ class MainWindow(QMainWindow):
             return
         QApplication.quit()
 
+    def _set_scanning(self, scanning: bool) -> None:
+        self.default_button.setEnabled(not scanning)
+        self.choose_button.setEnabled(not scanning)
+
     def _scan_folders(self, folders: list[Path]) -> None:
         existing = [folder for folder in folders if folder.is_dir()]
         if not existing:
             self.status_label.setText("None of the selected scan folders exist.")
             return
+        if self._scan_thread is not None:
+            return
 
-        self.default_button.setEnabled(False)
-        self.choose_button.setEnabled(False)
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        records = []
-        sources: dict[Path, str] = {}
-        try:
-            self.status_label.setText("Scanning and hashing local models...")
-            QApplication.processEvents()
-            for folder in existing:
-                for record in scan_folder(folder):
-                    records.append(record)
-                    sources[record.path] = folder.name
+        self._set_scanning(True)
+        thread = QThread(self)
+        worker = ScanWorker(existing)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.status.connect(self.status_label.setText)
+        worker.finished.connect(self._scan_complete)
+        worker.failed.connect(self._scan_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._thread_finished)
+        self._scan_thread = thread
+        self._scan_worker = worker
+        thread.start()
 
-            self.status_label.setText(f"Found {len(records)} files. Looking them up on Civitai...")
-            QApplication.processEvents()
-            try:
-                enrich_from_civitai(records)
-                civitai_status = ""
-            except Exception as exc:
-                civitai_status = f" Civitai lookup warning: {exc}"
+    @Slot(object, object, object, str)
+    def _scan_complete(self, records, sources, overlaps, summary: str) -> None:
+        self._show_files(records, sources)
+        self._show_overlaps(overlaps)
+        self.status_label.setText(summary)
 
-            self.status_label.setText("Analyzing character overlap...")
-            QApplication.processEvents()
-            overlaps = detect_overlaps(records)
-            self._show_files(records, sources)
-            self._show_overlaps(overlaps)
-            self.status_label.setText(
-                f"Done: {len(records)} files, {len(overlaps)} overlap group(s).{civitai_status}"
-            )
-        finally:
-            QApplication.restoreOverrideCursor()
-            self.default_button.setEnabled(True)
-            self.choose_button.setEnabled(True)
+    @Slot(str)
+    def _scan_failed(self, message: str) -> None:
+        self.status_label.setText(f"Scan failed: {message}")
+        QMessageBox.critical(self, "Scan Failed", message)
+
+    @Slot()
+    def _thread_finished(self) -> None:
+        self._scan_thread = None
+        self._scan_worker = None
+        self._set_scanning(False)
 
     def _show_files(self, records, sources) -> None:
         self.files_table.setSortingEnabled(False)
         self.files_table.setRowCount(len(records))
         for row, record in enumerate(records):
             values = [
-                sources.get(record.path, ""),
-                str(record.path),
-                str(record.file_size),
-                str(record.civitai_model_id or ""),
-                str(record.civitai_model_version_id or ""),
-                record.base_model or "",
-                ", ".join(record.trained_words),
+                sources.get(record.path, ""), str(record.path), str(record.file_size),
+                str(record.civitai_model_id or ""), str(record.civitai_model_version_id or ""),
+                record.base_model or "", ", ".join(record.trained_words),
                 "; ".join(record.scan_errors),
             ]
             for column, value in enumerate(values):
@@ -166,11 +213,8 @@ class MainWindow(QMainWindow):
         for row, overlap in enumerate(overlaps):
             paths = [str(record.path) for record in overlap.records]
             values = [
-                overlap.character,
-                overlap.confidence,
-                str(len(paths)),
-                overlap.evidence,
-                "\n".join(paths),
+                overlap.character, overlap.confidence, str(len(paths)),
+                overlap.evidence, "\n".join(paths),
             ]
             for column, value in enumerate(values):
                 self.overlap_table.setItem(row, column, QTableWidgetItem(value))
