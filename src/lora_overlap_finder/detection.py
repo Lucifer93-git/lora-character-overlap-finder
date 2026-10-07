@@ -18,6 +18,7 @@ STOP_WORDS = {
     "boy", "solo", "1girl", "1boy", "masterpiece", "best", "quality", "monochrome",
     "greyscale", "grayscale", "simple", "background", "white", "black", "rating",
     "safe", "general", "sensitive", "explicit", "source", "game", "cg",
+    "apron", "ponytail", "eyes", "eye", "hair", "dress", "shirt", "skirt", "uniform",
 }
 GENERIC_TRIGGERS = {
     "1girl", "1boy", "solo", "female", "male", "woman", "man", "masterpiece",
@@ -26,6 +27,9 @@ GENERIC_TRIGGERS = {
     "smile", "closed mouth", "open mouth", "long hair", "short hair", "blush",
     "standing", "sitting", "upper body", "full body", "portrait", "game cg",
     "official art", "official artwork", "screenshot", "visual novel",
+    "apron", "ponytail", "black eyes", "blue eyes", "brown eyes", "green eyes",
+    "red eyes", "blonde hair", "black hair", "brown hair", "red hair", "blue hair",
+    "white hair", "grey hair", "gray hair",
 }
 
 
