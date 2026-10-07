@@ -48,3 +48,9 @@ def test_pack_is_prioritized_over_standalone_character():
     assert tifa.records[0] is pack
     assert len(tifa.records) == 3
     assert "multi-character pack cross-match" in tifa.evidence
+
+
+def test_appearance_tags_are_not_character_groups():
+    a = LoraRecord(Path("A.safetensors"), trained_words=["apron", "ponytail", "black eyes"])
+    b = LoraRecord(Path("B.safetensors"), trained_words=["apron", "ponytail", "black eyes"])
+    assert not detect_overlaps([a, b])
