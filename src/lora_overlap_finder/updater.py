@@ -92,8 +92,11 @@ def install_update(update: UpdateInfo) -> None:
         'tasklist /FI "PID eq %PID%" 2>NUL | find "%PID%" >NUL\n'
         "if not errorlevel 1 (timeout /t 1 /nobreak >NUL & goto waitloop)\n"
         'copy /Y "%NEW%" "%OLD%" >NUL\n'
+        'if errorlevel 1 (timeout /t 2 /nobreak >NUL & goto waitloop)\n'
+        'timeout /t 3 /nobreak >NUL\n'
         'start "" "%OLD%"\n'
-        'del "%~f0"\n',
+        'timeout /t 3 /nobreak >NUL\n'
+        'rmdir /S /Q "%~dp0" 2>NUL\n',
         encoding="utf-8",
     )
     subprocess.Popen(
