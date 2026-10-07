@@ -106,7 +106,7 @@ class MainWindow(QMainWindow):
         self.overlap_table = QTreeWidget()
         self.overlap_table.setColumnCount(7)
         self.overlap_table.setHeaderLabels(
-            ["Delete", "Preview", "Character / Match", "LoRA", "Confidence", "Evidence", "Path"]
+            ["Delete", "Preview", "LoRA Name", "Character / Match", "Tags", "Confidence", "Path"]
         )
         self.overlap_table.setAlternatingRowColors(True)
         self.overlap_table.setIconSize(QSize(96, 96))
@@ -237,8 +237,6 @@ class MainWindow(QMainWindow):
             pack_group = "multi-character pack cross-match" in overlap.evidence
             prefix = "PACK → " if pack_group else ""
             group.setText(2, f"{prefix}{overlap.character} · {len(overlap.records)} LoRAs")
-            group.setText(4, overlap.confidence)
-            group.setText(5, overlap.evidence)
             group.setFirstColumnSpanned(True)
             group.setExpanded(True)
             font = group.font(2)
@@ -251,13 +249,15 @@ class MainWindow(QMainWindow):
                 child.setCheckState(0, Qt.CheckState.Unchecked)
                 raw = str(record.path)
                 child.setData(0, Qt.ItemDataRole.UserRole, raw)
-                child.setText(2, overlap.character)
                 model_name = record.metadata.get("_civitai_model_name")
                 display_name = str(model_name).strip() if model_name else record.path.stem
-                child.setText(3, display_name)
-                child.setToolTip(3, record.path.name)
-                child.setText(4, overlap.confidence)
-                child.setText(5, overlap.evidence)
+                child.setText(2, display_name)
+                child.setToolTip(2, record.path.name)
+                child.setText(3, overlap.character)
+                tags = ", ".join(record.trained_words)
+                child.setText(4, tags)
+                child.setToolTip(4, tags)
+                child.setText(5, overlap.confidence)
                 child.setText(6, raw)
                 preview = find_preview(record.path)
                 record.preview_path = preview
@@ -274,6 +274,9 @@ class MainWindow(QMainWindow):
 
         for column in range(7):
             self.overlap_table.resizeColumnToContents(column)
+        self.overlap_table.setColumnWidth(2, min(max(self.overlap_table.columnWidth(2), 260), 420))
+        self.overlap_table.setColumnWidth(3, min(max(self.overlap_table.columnWidth(3), 180), 320))
+        self.overlap_table.setColumnWidth(4, min(max(self.overlap_table.columnWidth(4), 260), 520))
 
     def _selected_paths(self) -> list[Path]:
         paths: list[Path] = []
