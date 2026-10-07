@@ -234,7 +234,9 @@ class MainWindow(QMainWindow):
         self.overlap_table.clear()
         for overlap in overlaps:
             group = QTreeWidgetItem(self.overlap_table)
-            group.setText(2, f"{overlap.character} · {len(overlap.records)} matches")
+            pack_group = "multi-character pack cross-match" in overlap.evidence
+            prefix = "PACK → " if pack_group else ""
+            group.setText(2, f"{prefix}{overlap.character} · {len(overlap.records)} LoRAs")
             group.setText(4, overlap.confidence)
             group.setText(5, overlap.evidence)
             group.setFirstColumnSpanned(True)
@@ -250,7 +252,10 @@ class MainWindow(QMainWindow):
                 raw = str(record.path)
                 child.setData(0, Qt.ItemDataRole.UserRole, raw)
                 child.setText(2, overlap.character)
-                child.setText(3, record.path.name)
+                model_name = record.metadata.get("_civitai_model_name")
+                display_name = str(model_name).strip() if model_name else record.path.stem
+                child.setText(3, display_name)
+                child.setToolTip(3, record.path.name)
                 child.setText(4, overlap.confidence)
                 child.setText(5, overlap.evidence)
                 child.setText(6, raw)
