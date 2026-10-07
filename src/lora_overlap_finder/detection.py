@@ -17,14 +17,15 @@ STOP_WORDS = {
     "illustrious", "flux", "anime", "trained", "trigger", "woman", "man", "girl",
     "boy", "solo", "1girl", "1boy", "masterpiece", "best", "quality", "monochrome",
     "greyscale", "grayscale", "simple", "background", "white", "black", "rating",
-    "safe", "general", "sensitive", "explicit", "source",
+    "safe", "general", "sensitive", "explicit", "source", "game", "cg",
 }
 GENERIC_TRIGGERS = {
     "1girl", "1boy", "solo", "female", "male", "woman", "man", "masterpiece",
     "best quality", "high quality", "looking at viewer", "monochrome", "greyscale",
     "grayscale", "white background", "simple background", "black background",
     "smile", "closed mouth", "open mouth", "long hair", "short hair", "blush",
-    "standing", "sitting", "upper body", "full body", "portrait",
+    "standing", "sitting", "upper body", "full body", "portrait", "game cg",
+    "official art", "official artwork", "screenshot", "visual novel",
 }
 
 
@@ -189,54 +190,75 @@ def enrich_from_civitai(
     return cache_hits, len(missing)
 
 
+def _record_identity_candidates(record: LoraRecord) -> list[Candidate]:
+    return [c for c in candidates_from_record(record) if c.score >= 70]
+
+
+def _is_pack(items: list[Candidate]) -> bool:
+    # Multiple strong, distinct character-like identities are a good pack signal.
+    strong = {c.normalized for c in items if c.score >= 85}
+    return len(strong) >= 2
+
+
 def detect_overlaps(records: list[LoraRecord]) -> list[Overlap]:
     candidates: dict[int, list[Candidate]] = {}
+    packs: set[int] = set()
     for index, record in enumerate(records):
         if record.classification == "style":
             candidates[index] = []
             record.character_candidates = []
             continue
-        candidates[index] = candidates_from_record(record)
-        record.character_candidates = [c.normalized for c in candidates[index] if c.score >= 70]
+        items = _record_identity_candidates(record)
+        candidates[index] = items
+        record.character_candidates = [c.normalized for c in items]
+        if _is_pack(items):
+            packs.add(index)
 
     groups: dict[str, list[tuple[int, Candidate]]] = defaultdict(list)
     for index, items in candidates.items():
         for candidate in items:
-            if candidate.score >= 70:
-                groups[candidate.normalized].append((index, candidate))
+            groups[candidate.normalized].append((index, candidate))
 
     overlaps: list[Overlap] = []
     for key, matches in groups.items():
         unique_indices = sorted({idx for idx, _ in matches})
         if len(unique_indices) < 2:
             continue
-        best = max((candidate for _, candidate in matches), key=lambda c: c.score)
-        min_score = min(max(c.score for i, c in matches if i == idx) for idx in unique_indices)
-        confidence = "High" if min_score >= 85 else "Medium"
-        evidence = "; ".join(sorted({e for _, c in matches for e in c.evidence}))
-        overlaps.append(
-            Overlap(
-                character=best.name,
-                confidence=confidence,
-                records=[records[idx] for idx in unique_indices],
-                evidence=evidence,
-            )
-        )
 
-    # Same Civitai model is a strong relation even if its trigger words changed.
+        # Prefer groups anchored by a multi-character pack. If no pack contains
+        # the identity, multiple standalone LoRAs for the same character still group.
+        pack_indices = [idx for idx in unique_indices if idx in packs]
+        ordered = pack_indices + [idx for idx in unique_indices if idx not in packs]
+        best = max((candidate for _, candidate in matches), key=lambda item: item.score)
+        min_score = min(max(c.score for i, c in matches if i == idx) for idx in unique_indices)
+        confidence = "High" if pack_indices or min_score >= 85 else "Medium"
+        evidence_bits = {e for _, candidate in matches for e in candidate.evidence}
+        if pack_indices:
+            evidence_bits.add("multi-character pack cross-match")
+        evidence = "; ".join(sorted(evidence_bits))
+        overlaps.append(Overlap(
+            character=best.name,
+            confidence=confidence,
+            records=[records[idx] for idx in ordered],
+            evidence=evidence,
+        ))
+
+    # Same Civitai model is retained as a strong fallback relation.
     model_groups: dict[int, list[LoraRecord]] = defaultdict(list)
     for record in records:
         if record.classification != "style" and record.civitai_model_id:
             model_groups[record.civitai_model_id].append(record)
     for model_id, items in model_groups.items():
         if len(items) > 1:
-            overlaps.append(
-                Overlap(
-                    character=f"Civitai model {model_id}",
-                    confidence="High",
-                    records=items,
-                    evidence="same Civitai model ID",
-                )
-            )
+            overlaps.append(Overlap(
+                character=f"Civitai model {model_id}",
+                confidence="High",
+                records=items,
+                evidence="same Civitai model ID",
+            ))
 
-    return sorted(overlaps, key=lambda x: (-len(x.records), x.character.casefold()))
+    def priority(overlap: Overlap) -> tuple[int, int, str]:
+        anchored = "multi-character pack cross-match" in overlap.evidence
+        return (0 if anchored else 1, -len(overlap.records), overlap.character.casefold())
+
+    return sorted(overlaps, key=priority)
