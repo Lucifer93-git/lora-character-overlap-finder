@@ -121,16 +121,12 @@ def candidates_from_record(record: LoraRecord) -> list[Candidate]:
     found: dict[str, Candidate] = {}
     _add(found, record.path.stem, 45, "filename")
 
-    for trigger in _metadata_triggers(record):
-        _add(found, trigger, 70, "embedded trigger")
 
     for text in _walk_strings(record.sidecar_metadata):
         # Sidecars often contain explicit trainedWords arrays and model names.
         if len(text) <= 80:
             _add(found, text, 35, "sidecar metadata")
 
-    for trigger in record.trained_words:
-        _add(found, trigger, 90, "Civitai trained word")
 
     model_name = record.metadata.get("_civitai_model_name")
     if isinstance(model_name, str):
@@ -195,7 +191,7 @@ def enrich_from_civitai(
 
 
 def _record_identity_candidates(record: LoraRecord) -> list[Candidate]:
-    return [c for c in candidates_from_record(record) if c.score >= 70]
+    return [c for c in candidates_from_record(record) if c.score >= 80 and "Civitai model name" in c.evidence]
 
 
 def _is_pack(items: list[Candidate]) -> bool:
